@@ -1,0 +1,100 @@
+# =============================================================================
+# Quality Gates — UI Automation
+# =============================================================================
+# This file defines the pass/fail thresholds that must be met before a
+# pipeline promotion (e.g. merge, deployment) is allowed to proceed.
+#
+# Evaluated by the orchestrator (agents/orchestrator.ts) after Agent 05
+# (QA Lead Reviewer) produces the final test report.
+#
+# Format is read by: scripts/check-quality-gates.ts (orchestrator helper)
+# =============================================================================
+
+gates:
+
+  # ---------------------------------------------------------------------------
+  # 1. Test Pass Rate — minimum percentage of tests that must pass
+  # ---------------------------------------------------------------------------
+  pass_rate:
+    overall:    100   # All tests must pass (0 failures tolerated in CI)
+    by_priority:
+      P0:       100   # Smoke/critical — ZERO failures allowed
+      P1:        95   # Core features  — up to 1 flake tolerated on rerun
+      P2:        80   # Edge cases     — minor failures acceptable
+
+  # ---------------------------------------------------------------------------
+  # 2. Failure Budget — maximum absolute number of failed tests allowed
+  # ---------------------------------------------------------------------------
+  max_failures:
+    P0:  0   # Any P0 failure blocks the pipeline immediately
+    P1:  1   # 1 P1 failure triggers a warning; 2+ blocks
+    P2:  3   # Up to 3 P2 failures allowed before blocking
+
+  # ---------------------------------------------------------------------------
+  # 3. Required Coverage — functional areas that MUST have at least one
+  #    passing test before promotion
+  # ---------------------------------------------------------------------------
+  required_coverage:
+    functional_areas:
+      - FA-005   # Part — Create (UI form)
+      - FA-006   # Part — Read / List / Search (UI)
+      - FA-007   # Part — Update (UI edit form)
+      - FA-009   # Part — Delete (UI confirmation modal)
+
+    # Tag-level coverage: at least one test with each tag must pass
+    required_tags:
+      - smoke
+      - auth
+      - regression
+
+  # ---------------------------------------------------------------------------
+  # 4. Accessibility Thresholds
+  #    UI tests must not introduce new a11y violations above these levels.
+  # ---------------------------------------------------------------------------
+  accessibility:
+    max_critical_violations: 0   # Critical axe-core violations block the gate
+    max_serious_violations:  2   # Serious violations trigger a warning
+
+  # ---------------------------------------------------------------------------
+  # 5. Visual / Interaction Thresholds
+  # ---------------------------------------------------------------------------
+  interaction:
+    page_load_timeout_ms:   15000   # Navigation must complete within 15 s
+    action_timeout_ms:       5000   # Each Playwright action (click/fill) limit
+
+  # ---------------------------------------------------------------------------
+  # 6. Retry Policy
+  # ---------------------------------------------------------------------------
+  retries:
+    on_ci:    1   # Retry once to absorb transient rendering flakes
+    on_local: 0   # Fail fast locally
+
+  # ---------------------------------------------------------------------------
+  # 7. Report Artifacts — must be present for gate evaluation
+  # ---------------------------------------------------------------------------
+  required_artifacts:
+    - playwright-report/index.html
+    - agent-artifacts/logs/04-ui-automation-output.json
+
+  # ---------------------------------------------------------------------------
+  # 8. Screenshot / Trace Policy
+  #    Failures must produce evidence for triage.
+  # ---------------------------------------------------------------------------
+  evidence:
+    screenshot_on_failure: true
+    trace_on_retry:        true
+    video_on_retry:        true
+
+  # ---------------------------------------------------------------------------
+  # 9. Gate Enforcement Mode
+  # ---------------------------------------------------------------------------
+  enforcement:
+    P0_failures:       block
+    P1_failures:       block
+    P2_failures:       warn
+    pass_rate:         block
+    coverage:          block
+    accessibility:     warn
+    interaction:       warn
+    artifacts:         block
+    evidence:          warn

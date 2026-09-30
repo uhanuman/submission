@@ -1,0 +1,172 @@
+# =============================================================================
+# CI/CD — API Automation Tests
+# GitHub Actions Workflow
+# =============================================================================
+# Triggers:
+#   • Push to main / develop
+#   • Pull Request targeting main / develop
+#   • Manual dispatch (workflow_dispatch) with optional env override
+#
+# Jobs:
+#   api-test  → install → lint → run Playwright API tests → quality gates
+# =============================================================================
+
+name: API Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "automation/api/**"
+      - ".github/workflows/api-tests.yml"
+
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "automation/api/**"
+      - ".github/workflows/api-tests.yml"
+
+  # Allow manual trigger from the GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      inventree_base_url:
+        description: "InvenTree base URL (overrides secret)"
+        required: false
+        default: ""
+      debug_enabled:
+        description: "Enable Playwright debug output"
+        required: false
+        type: boolean
+        default: false
+
+# Cancel in-progress runs on the same branch to save runner minutes
+concurrency:
+  group: api-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  WORKING_DIR: automation/api
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job: api-test
+  # ---------------------------------------------------------------------------
+  api-test:
+    name: "Playwright API Tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Environment variables injected from GitHub Secrets / workflow inputs
+    env:
+      INVENTREE_BASE_URL: ${{ inputs.inventree_base_url || secrets.INVENTREE_BASE_URL }}
+      INVENTREE_API_TOKEN: ${{ secrets.INVENTREE_API_TOKEN }}
+      CI: "true"
+      DEBUG: ${{ inputs.debug_enabled == true && 'pw:api' || '' }}
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: ⬇️  Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: 🟢  Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      # -----------------------------------------------------------------------
+      - name: 📦  Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      # -----------------------------------------------------------------------
+      - name: 🔍  TypeScript type-check (lint)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm run lint
+
+      # -----------------------------------------------------------------------
+      - name: 🎭  Install Playwright (no browsers needed for API tests)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npx playwright install --with-deps chromium
+        # Note: API tests don't launch a browser, but Playwright CLI requires
+        # at least one browser installed to resolve its dependencies.
+
+      # -----------------------------------------------------------------------
+      - name: ✅  Validate environment variables
+        run: |
+          if [ -z "$INVENTREE_BASE_URL" ]; then
+            echo "❌ INVENTREE_BASE_URL is not set. Add it to GitHub Secrets."
+            exit 1
+          fi
+          if [ -z "$INVENTREE_API_TOKEN" ]; then
+            echo "❌ INVENTREE_API_TOKEN is not set. Add it to GitHub Secrets."
+            exit 1
+          fi
+          echo "✅ Environment variables validated."
+          echo "   Base URL: $INVENTREE_BASE_URL"
+
+      # -----------------------------------------------------------------------
+      - name: 🎭  Run Playwright API tests
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npx playwright test --reporter=list,html
+        continue-on-error: true   # Collect report even on failure
+        id: run_tests
+
+      # -----------------------------------------------------------------------
+      - name: 📊  Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-playwright-report-${{ github.run_number }}
+          path: ${{ env.WORKING_DIR }}/playwright-report/
+          retention-days: 30
+
+      # -----------------------------------------------------------------------
+      - name: 📊  Upload test results (JSON)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-results-${{ github.run_number }}
+          path: ${{ env.WORKING_DIR }}/test-results/
+          retention-days: 14
+
+      # -----------------------------------------------------------------------
+      - name: 🚦  Enforce quality gates
+        working-directory: ${{ env.WORKING_DIR }}
+        # Read quality-gates.yml and fail the job if thresholds are breached.
+        # Replace this step with your gate-checking script once implemented
+        # (e.g. npx ts-node ../../agents/scripts/check-quality-gates.ts api).
+        run: |
+          echo "=== Quality Gate Check ==="
+          # Fail this step if the Playwright test run itself failed
+          if [ "${{ steps.run_tests.outcome }}" == "failure" ]; then
+            echo "❌ Quality Gate FAILED — Playwright reported test failures."
+            echo "   Review the uploaded HTML report for details."
+            exit 1
+          fi
+          echo "✅ Quality Gate PASSED — All API tests passed."
+
+      # -----------------------------------------------------------------------
+      - name: 💬  Comment PR with test summary
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const outcome = '${{ steps.run_tests.outcome }}';
+            const icon    = outcome === 'success' ? '✅' : '❌';
+            const status  = outcome === 'success' ? 'PASSED' : 'FAILED';
+            const runUrl  = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner:    context.repo.owner,
+              repo:     context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ${icon} API Tests — ${status}\n\n` +
+                    `| | |\n|---|---|\n` +
+                    `| **Workflow run** | [#${{ github.run_number }}](${runUrl}) |\n` +
+                    `| **Triggered by** | \`${{ github.event_name }}\` |\n` +
+                    `| **Branch** | \`${{ github.head_ref }}\` |\n\n` +
+                    `📦 Playwright HTML report uploaded as workflow artifact.`
+            });

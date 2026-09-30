@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "pipeline_name": "InvenTree QE Agentic Pipeline",
+  "description": "Multi-agent quality engineering pipeline for InvenTree Part CRUD workflows",
+  "model": "gemini-3.8-flash",
+  "sdk": "@google/genai >= 2.3.0",
+
+  "agents": [
+    {
+      "id": "requirements-analyst",
+      "name": "Requirements Analyst",
+      "role": "Analyses application requirements and produces a structured test-requirements brief",
+      "system_instruction_ref": "system-instructions.md#agent-1--requirements-analyst",
+      "prompt_ref": "prompts.md#prompt-1--requirements-analyst-agent",
+      "input": null,
+      "output_key": "requirements_brief",
+      "output_format": "json",
+      "model_config": {
+        "temperature": 0.2,
+        "max_output_tokens": 8192,
+        "response_mime_type": "application/json"
+      },
+      "tags": ["requirements", "analysis"]
+    },
+    {
+      "id": "test-design-engineer",
+      "name": "Test Design Engineer",
+      "role": "Generates comprehensive manual test cases (API + UI) from requirements brief",
+      "system_instruction_ref": "system-instructions.md#agent-2--test-design-engineer",
+      "prompt_ref": "prompts.md#prompt-2--test-design-agent",
+      "input": "requirements_brief",
+      "output_key": "test_catalogue",
+      "output_format": "json",
+      "model_config": {
+        "temperature": 0.2,
+        "max_output_tokens": 16384,
+        "response_mime_type": "application/json"
+      },
+      "tags": ["test-design", "manual-tests"]
+    },
+    {
+      "id": "api-automation-engineer",
+      "name": "API Automation Engineer",
+      "role": "Generates Playwright + TypeScript API automation scripts from test catalogue",
+      "system_instruction_ref": "system-instructions.md#agent-3--api-automation-engineer",
+      "prompt_ref": "prompts.md#prompt-3--api-automation-agent",
+      "input": "test_catalogue",
+      "output_key": "api_automation_files",
+      "output_format": "json",
+      "model_config": {
+        "temperature": 0.1,
+        "max_output_tokens": 32768,
+        "response_mime_type": "application/json"
+      },
+      "tags": ["automation", "api", "playwright"]
+    },
+    {
+      "id": "ui-automation-engineer",
+      "name": "UI Automation Engineer",
+      "role": "Generates Playwright + TypeScript UI automation scripts (POM) from test catalogue",
+      "system_instruction_ref": "system-instructions.md#agent-4--ui-automation-engineer",
+      "prompt_ref": "prompts.md#prompt-4--ui-automation-agent",
+      "input": "test_catalogue",
+      "output_key": "ui_automation_files",
+      "output_format": "json",
+      "model_config": {
+        "temperature": 0.1,
+        "max_output_tokens": 32768,
+        "response_mime_type": "application/json"
+      },
+      "tags": ["automation", "ui", "playwright", "pom"]
+    },
+    {
+      "id": "qa-lead-reviewer",
+      "name": "QA Lead Reviewer",
+      "role": "Reviews all generated artefacts and produces a quality gate report",
+      "system_instruction_ref": "system-instructions.md",
+      "prompt_ref": "prompts.md#prompt-5--self-review--quality-gate",
+      "input": ["api_automation_files", "ui_automation_files"],
+      "output_key": "quality_report",
+      "output_format": "json",
+      "model_config": {
+        "temperature": 0.1,
+        "max_output_tokens": 8192,
+        "response_mime_type": "application/json"
+      },
+      "tags": ["review", "quality-gate"]
+    }
+  ],
+
+  "pipeline": {
+    "execution_mode": "sequential",
+    "steps": [
+      { "agent_id": "requirements-analyst", "depends_on": [] },
+      { "agent_id": "test-design-engineer", "depends_on": ["requirements-analyst"] },
+      { "agent_id": "api-automation-engineer", "depends_on": ["test-design-engineer"] },
+      { "agent_id": "ui-automation-engineer", "depends_on": ["test-design-engineer"] },
+      { "agent_id": "qa-lead-reviewer", "depends_on": ["api-automation-engineer", "ui-automation-engineer"] }
+    ]
+  },
+
+  "environment": {
+    "required_vars": [
+      "GEMINI_API_KEY",
+      "INVENTREE_BASE_URL",
+      "INVENTREE_API_TOKEN",
+      "INVENTREE_USERNAME",
+      "INVENTREE_PASSWORD"
+    ],
+    "optional_vars": [
+      "INVENTREE_API_VERSION"
+    ]
+  }
+}

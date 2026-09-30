@@ -1,0 +1,359 @@
+{
+  "application": "InvenTree",
+  "version_assumptions": "InvenTree >= 0.15.x, Django REST Framework backend, token-based authentication via Authorization header",
+  "functional_areas": [
+    {
+      "id": "FA-001",
+      "area": "Part Category — Create",
+      "description": "Allows authenticated users to create a new Part Category. Categories form a hierarchical tree; a category may optionally have a parent. The name must be unique within the same parent scope. Creation is only possible via POST to the REST API or via the category tree UI panel.",
+      "business_rules": [
+        "Category name is required and must be non-empty (max 100 characters).",
+        "A category may optionally reference a parent category by its integer ID; omitting the parent creates a root-level category.",
+        "Category names must be unique within the same parent; duplicate names under the same parent must be rejected with HTTP 400.",
+        "Write access requires a valid API token supplied in the Authorization header (Token <token>)."
+      ],
+      "api_endpoints": [
+        "POST /api/part/category/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Part Category tree view (accessible from the Parts section of the left navigation).",
+        "2. Click the 'Add Category' button or action menu.",
+        "3. Fill in the required 'Name' field; optionally select a parent category from the dropdown.",
+        "4. Optionally supply a description and/or structural notes.",
+        "5. Submit the form.",
+        "6. Verify the new category appears in the tree under the correct parent node.",
+        "7. Verify a success notification (toast/alert) is displayed."
+      ]
+    },
+    {
+      "id": "FA-002",
+      "area": "Part Category — Read (List)",
+      "description": "Retrieves the paginated list of all Part Categories. Supports filtering by parent category ID. Authenticated and unauthenticated requests may receive different data depending on instance configuration; write endpoints always require authentication.",
+      "business_rules": [
+        "The response must be a JSON array (or paginated object) containing at least id, name, description, and parent_id for each category.",
+        "Filtering by parent=<id> must return only direct children of that category; parent=null must return root categories.",
+        "The list endpoint must support ordering by name."
+      ],
+      "api_endpoints": [
+        "GET /api/part/category/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Parts section.",
+        "2. Observe the Category tree panel rendered on the left or top of the parts list page.",
+        "3. Click a category node to expand/collapse its children.",
+        "4. Clicking a category filters the parts list to show only parts within that category (and optionally its children)."
+      ]
+    },
+    {
+      "id": "FA-003",
+      "area": "Part Category — Read (Detail)",
+      "description": "Retrieves the full detail of a single Part Category by its integer primary key, including metadata, parent reference, and child count.",
+      "business_rules": [
+        "A valid numeric category ID must return HTTP 200 with the full category object.",
+        "An invalid or non-existent category ID must return HTTP 404.",
+        "The response must include at minimum: id, name, description, parent (integer or null), pathstring, and part_count."
+      ],
+      "api_endpoints": [
+        "GET /api/part/category/{id}/"
+      ],
+      "ui_flows": [
+        "1. From the Category tree view, click on a category name.",
+        "2. Observe that the parts list filters to that category.",
+        "3. Inspect the category detail panel (if rendered separately) showing the category name, parent breadcrumb, and description.",
+        "4. Verify part_count reflects the number of parts assigned to the category."
+      ]
+    },
+    {
+      "id": "FA-004",
+      "area": "Part Category — Update",
+      "description": "Allows authenticated users to rename, reparent, or update the description of an existing Part Category via a full PUT request. The category ID in the URL identifies the target resource.",
+      "business_rules": [
+        "The name field is required in a PUT request; omitting it must result in HTTP 400.",
+        "Changing the parent to a descendant of the category itself must be rejected to prevent circular hierarchy (HTTP 400).",
+        "Renaming a category must propagate to all pathstring references of child categories.",
+        "Write access requires a valid API token."
+      ],
+      "api_endpoints": [
+        "PUT /api/part/category/{id}/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Part Category tree view.",
+        "2. Select a category and click its 'Edit' action.",
+        "3. Modify the name and/or parent category fields in the edit form.",
+        "4. Submit the form.",
+        "5. Verify the category tree reflects the updated name and position.",
+        "6. Verify a success notification is displayed."
+      ]
+    },
+    {
+      "id": "FA-005",
+      "area": "Part Category — Delete",
+      "description": "Allows authenticated users to delete an existing Part Category. Deletion may be blocked or require confirmation if the category contains parts or child categories.",
+      "business_rules": [
+        "Deleting a category that still has assigned parts must either be rejected (HTTP 400) or require the user to reassign/delete the parts first.",
+        "Deleting a category with child categories must either cascade or be rejected depending on instance configuration; the API must return a clear error (HTTP 400) if deletion is blocked.",
+        "Write access requires a valid API token.",
+        "A successful delete must return HTTP 204 No Content."
+      ],
+      "api_endpoints": [
+        "DELETE /api/part/category/{id}/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Part Category tree view.",
+        "2. Select a category and click its 'Delete' action.",
+        "3. Confirm deletion in the confirmation dialog.",
+        "4. Verify the category is removed from the tree.",
+        "5. Verify any parts previously in the category are either reassigned or show no category.",
+        "6. Verify a success notification is displayed."
+      ]
+    },
+    {
+      "id": "FA-006",
+      "area": "Part — Create",
+      "description": "Allows authenticated users to create a new Part. Parts are the core inventory entity. Required fields include name and category. Optional fields include description, IPN (internal part number), active status, purchaseable, saleable, trackable, and virtual flags.",
+      "business_rules": [
+        "Part name is required and must be non-empty (max 100 characters).",
+        "At least one category must be assigned; the category must already exist (valid foreign key).",
+        "IPN (Internal Part Number), if provided, must be unique across all parts; duplicate IPN values must be rejected with HTTP 400.",
+        "A new part defaults to active=true; the active flag can be set explicitly at creation time.",
+        "Write access requires a valid API token.",
+        "The response on successful creation must return HTTP 201 with the full part object including the system-assigned id."
+      ],
+      "api_endpoints": [
+        "POST /api/part/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Parts list page (/part/).",
+        "2. Click the 'Create Part' button (or equivalent action).",
+        "3. The Create Part form (modal or dedicated page) opens.",
+        "4. Enter a unique Part Name (required).",
+        "5. Select a Part Category from the dropdown (required).",
+        "6. Optionally enter Description, IPN, and toggle flags (active, purchaseable, saleable, trackable, virtual).",
+        "7. Submit the form.",
+        "8. Verify the new part appears in the parts list.",
+        "9. Verify a success notification is displayed.",
+        "10. Verify the system-assigned part ID is reflected in the detail page URL."
+      ]
+    },
+    {
+      "id": "FA-007",
+      "area": "Part — Read (List)",
+      "description": "Retrieves a paginated list of all Parts. Supports multiple filter parameters including category, active status, and name keyword search. The list is the primary entry point for browsing the part catalogue.",
+      "business_rules": [
+        "The response must include at minimum: id, name, description, category (id + name), IPN, active, and thumbnail URL for each part.",
+        "Pagination parameters (limit and offset) must be supported and respected; the response envelope must include count, next, and previous links.",
+        "Filter by category=<id> must return only parts belonging directly to that category (not children) unless cascade is specified.",
+        "Filter by active=true/false must return only parts matching that active status.",
+        "Filter by search=<keyword> must perform a case-insensitive substring match on the part name and IPN."
+      ],
+      "api_endpoints": [
+        "GET /api/part/"
+      ],
+      "ui_flows": [
+        "1. Navigate to /part/.",
+        "2. The parts list table loads with all parts (default sort by name or ID).",
+        "3. Observe pagination controls at the bottom.",
+        "4. Use the search bar to filter by keyword.",
+        "5. Use the category tree panel or dropdown to filter by category.",
+        "6. Use the active status toggle to filter active or inactive parts.",
+        "7. Click a column header to sort the list."
+      ]
+    },
+    {
+      "id": "FA-008",
+      "area": "Part — Read (Detail)",
+      "description": "Retrieves the full details of a single Part by its integer primary key. The detail page includes all fields, stock information, BOM, suppliers, and related resources.",
+      "business_rules": [
+        "A valid numeric part ID must return HTTP 200 with the full part object including all flag fields.",
+        "An invalid or non-existent part ID must return HTTP 404.",
+        "The response must include: id, name, description, category, IPN, active, purchaseable, saleable, trackable, virtual, units, minimum_stock, and image thumbnail URL.",
+        "Read access to public parts may not require authentication; write operations always require a valid token."
+      ],
+      "api_endpoints": [
+        "GET /api/part/{id}/"
+      ],
+      "ui_flows": [
+        "1. From the parts list (/part/), click on a part name or row.",
+        "2. Navigate to the Part detail page (/part/{id}/).",
+        "3. Verify all part fields are displayed: name, IPN, description, category, active status, and flag indicators.",
+        "4. Verify the Stock tab shows current stock levels.",
+        "5. Verify the BOM tab renders (if applicable).",
+        "6. Verify the Suppliers tab renders (if applicable)."
+      ]
+    },
+    {
+      "id": "FA-009",
+      "area": "Part — Update (Full — PUT)",
+      "description": "Allows authenticated users to perform a full replacement update of an existing Part via HTTP PUT. All required fields must be supplied; missing required fields result in validation errors.",
+      "business_rules": [
+        "Name is required in a PUT request; omitting it must result in HTTP 400.",
+        "Category is required in a PUT request; supplying a non-existent category ID must result in HTTP 400.",
+        "If IPN is changed, the new value must still be globally unique; duplicate IPN must be rejected with HTTP 400.",
+        "A successful full update must return HTTP 200 with the updated part object.",
+        "Write access requires a valid API token.",
+        "Boolean flag fields (active, purchaseable, saleable, trackable, virtual) default to false when omitted in a PUT body."
+      ],
+      "api_endpoints": [
+        "PUT /api/part/{id}/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Part detail page (/part/{id}/).",
+        "2. Click the 'Edit Part' button.",
+        "3. The Edit Part form pre-populates all existing field values.",
+        "4. Modify one or more fields.",
+        "5. Submit the form.",
+        "6. Verify the part detail page reflects the updated values.",
+        "7. Verify a success notification is displayed."
+      ]
+    },
+    {
+      "id": "FA-010",
+      "area": "Part — Update (Partial — PATCH)",
+      "description": "Allows authenticated users to partially update specific fields of an existing Part via HTTP PATCH. Only supplied fields are updated; unspecified fields retain their current values.",
+      "business_rules": [
+        "A PATCH request with no body fields must still return HTTP 200 (no-op update).",
+        "If IPN is included in the PATCH body, it must remain globally unique; duplicate values must be rejected with HTTP 400.",
+        "If active is set to false via PATCH, the part should still be accessible (read) but flagged as inactive.",
+        "Write access requires a valid API token.",
+        "A successful partial update must return HTTP 200 with the complete updated part object."
+      ],
+      "api_endpoints": [
+        "PATCH /api/part/{id}/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Part detail page (/part/{id}/).",
+        "2. Click the 'Edit Part' button or an inline edit affordance.",
+        "3. Modify only the desired fields (e.g., toggle the active flag).",
+        "4. Submit the form.",
+        "5. Verify only the modified fields changed; all other fields remain unchanged.",
+        "6. Verify a success notification is displayed."
+      ]
+    },
+    {
+      "id": "FA-011",
+      "area": "Part — Delete",
+      "description": "Allows authenticated users to delete an existing Part. Deletion is blocked if the part has active stock, open orders, or is referenced in a Bill of Materials.",
+      "business_rules": [
+        "A part with existing stock items must not be deleted; the API must return HTTP 400 with an appropriate error message.",
+        "A part referenced as a BOM item in another part must not be deleted until the BOM reference is removed.",
+        "A successful delete must return HTTP 204 No Content.",
+        "Write access requires a valid API token.",
+        "The UI must present a confirmation dialog before deletion proceeds."
+      ],
+      "api_endpoints": [
+        "DELETE /api/part/{id}/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Part detail page (/part/{id}/).",
+        "2. Open the action menu and select 'Delete Part'.",
+        "3. Confirm deletion in the confirmation dialog.",
+        "4. Verify redirection to the parts list page after deletion.",
+        "5. Verify the deleted part no longer appears in the parts list.",
+        "6. Verify a success notification is displayed."
+      ]
+    },
+    {
+      "id": "FA-012",
+      "area": "Part Search & Filtering",
+      "description": "The Parts list API supports rich filtering and search to allow users and automation clients to locate parts by category membership, active status, name keyword, or IPN. Multiple filter parameters may be combined.",
+      "business_rules": [
+        "Filter parameter 'category=<id>' must return only parts directly assigned to the specified category.",
+        "Filter parameter 'active=true' or 'active=false' must return only parts matching that boolean status.",
+        "Filter parameter 'search=<keyword>' must perform a case-insensitive substring search across name and IPN fields.",
+        "Combining 'category', 'active', and 'search' parameters in a single request must return the intersection of all applied filters.",
+        "A search with no matching results must return HTTP 200 with an empty results array (not HTTP 404).",
+        "Pagination (limit/offset) must apply correctly even when filters are active."
+      ],
+      "api_endpoints": [
+        "GET /api/part/?category=<id>",
+        "GET /api/part/?active=true",
+        "GET /api/part/?active=false",
+        "GET /api/part/?search=<keyword>",
+        "GET /api/part/?category=<id>&active=true&search=<keyword>"
+      ],
+      "ui_flows": [
+        "1. Navigate to the Parts list page (/part/).",
+        "2. Enter a keyword in the search bar; observe the list updates in real-time or on submit.",
+        "3. Click a category in the category tree; observe the list filters to that category.",
+        "4. Toggle the 'Active Only' filter; observe only active/inactive parts are shown.",
+        "5. Combine the search keyword and category filter; verify the result set is the intersection.",
+        "6. Clear all filters; verify the full part list is restored.",
+        "7. Navigate to a page beyond the result count; verify an empty or appropriate state is shown."
+      ]
+    },
+    {
+      "id": "FA-013",
+      "area": "Authentication — Token-Based Auth",
+      "description": "All write operations (POST, PUT, PATCH, DELETE) and some read operations on InvenTree require the client to supply a valid API token via the Authorization HTTP header. Tokens are obtained by posting credentials to the login endpoint. Unauthenticated or invalidly authenticated write requests must be rejected.",
+      "business_rules": [
+        "All POST, PUT, PATCH, and DELETE requests to /api/part/ and /api/part/category/ must include the header 'Authorization: Token <token>'; absence must return HTTP 403 Forbidden.",
+        "An expired or invalid token must return HTTP 401 Unauthorized.",
+        "Token acquisition requires a valid username and password submitted to the authentication endpoint (POST /api/user/token/ or POST /api/auth/login/).",
+        "Tokens are user-scoped; a token belonging to a user without write permissions must result in HTTP 403 even if the token is valid.",
+        "GET requests to public endpoints may succeed without a token depending on instance configuration, but authenticated GETs must succeed when a valid token is supplied."
+      ],
+      "api_endpoints": [
+        "POST /api/user/token/",
+        "GET /api/user/me/",
+        "POST /api/part/",
+        "PUT /api/part/{id}/",
+        "PATCH /api/part/{id}/",
+        "DELETE /api/part/{id}/",
+        "POST /api/part/category/",
+        "PUT /api/part/category/{id}/",
+        "DELETE /api/part/category/{id}/"
+      ],
+      "ui_flows": [
+        "1. Navigate to the InvenTree login page.",
+        "2. Enter valid username and password; click Login.",
+        "3. Verify redirection to the dashboard after successful login.",
+        "4. Attempt to navigate to /part/ without being logged in; verify redirection to the login page.",
+        "5. Attempt a write action (e.g., create part) without a token in an API client; verify HTTP 403 response.",
+        "6. Log out; verify the session is cleared and subsequent authenticated pages redirect to login."
+      ]
+    }
+  ],
+  "non_functional_areas": [
+    {
+      "id": "NFA-001",
+      "area": "Security — Token Authentication Enforcement",
+      "description": "All mutating API endpoints must enforce token authentication without exception. Tokens must be treated as secrets; they must not appear in query strings, logs, or responses. The API must not accept session cookies as an alternative to tokens for programmatic access."
+    },
+    {
+      "id": "NFA-002",
+      "area": "Performance — List Endpoint Response Time",
+      "description": "GET /api/part/ with no filters must return an initial page of results within 2 000 ms under normal load (< 50 concurrent users, catalogue size < 10 000 parts). Filtered queries must respond within 3 000 ms."
+    },
+    {
+      "id": "NFA-003",
+      "area": "Data Integrity — Referential Constraints",
+      "description": "The API must enforce referential integrity between Part and PartCategory. Assigning a part to a non-existent category must fail at the database/validation layer with a clear HTTP 400 error containing a field-level error message. Cascade behaviours on category deletion must be documented and tested."
+    },
+    {
+      "id": "NFA-004",
+      "area": "Usability — Form Validation Feedback",
+      "description": "The Create/Edit Part UI form must display inline validation messages for each invalid field before or immediately after submission. Required-field violations (e.g., missing name) must prevent form submission and highlight the offending field."
+    },
+    {
+      "id": "NFA-005",
+      "area": "Compatibility — API Version Stability",
+      "description": "The API endpoints under /api/part/ must conform to the InvenTree REST API schema version >= 0.15.x. Any breaking changes to request/response schemas must be surfaced via API versioning headers. Automation scripts must be resilient to non-breaking additive changes."
+    }
+  ],
+  "out_of_scope": [
+    "Stock management (stock items, stock adjustments, stocktake)",
+    "Bill of Materials (BOM) management and validation",
+    "Purchase orders and supplier management",
+    "Sales orders and customer management",
+    "Manufacturing / build orders",
+    "Part attachments and image upload",
+    "Part parameters and parameter templates",
+    "Pricing and cost tracking",
+    "InvenTree plugin system",
+    "Mobile app (iOS / Android) testing",
+    "Multi-site / multi-location stock",
+    "User management and permission administration",
+    "Report generation and printing",
+    "Barcode / QR code scanning workflows"
+  ]
+}

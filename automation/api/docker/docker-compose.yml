@@ -1,0 +1,71 @@
+# InvenTree Docker Compose for API test environment
+# Based on the official InvenTree quick-start image.
+# Usage: docker compose up -d  (from this directory)
+
+services:
+  inventree-db:
+    image: postgres:14-alpine
+    container_name: inventree-db
+    environment:
+      POSTGRES_USER: inventree
+      POSTGRES_PASSWORD: inventree
+      POSTGRES_DB: inventree
+    volumes:
+      - inventree-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventree"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  inventree-server:
+    image: inventree/inventree:stable
+    container_name: inventree-server
+    depends_on:
+      inventree-db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      INVENTREE_DB_ENGINE: django.db.backends.postgresql
+      INVENTREE_DB_NAME: inventree
+      INVENTREE_DB_USER: inventree
+      INVENTREE_DB_PASSWORD: inventree
+      INVENTREE_DB_HOST: inventree-db
+      INVENTREE_DB_PORT: 5432
+      INVENTREE_ADMIN_USER: admin
+      INVENTREE_ADMIN_PASSWORD: inventree
+      INVENTREE_ADMIN_EMAIL: admin@example.com
+      INVENTREE_SECRET_KEY: changeme-secret-key-for-testing-only
+      INVENTREE_DEBUG: "True"
+      INVENTREE_CORS_ORIGIN_ALLOW_ALL: "True"
+    volumes:
+      - inventree-data:/home/inventree/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  inventree-worker:
+    image: inventree/inventree:stable
+    container_name: inventree-worker
+    command: invoke worker
+    depends_on:
+      inventree-server:
+        condition: service_healthy
+    environment:
+      INVENTREE_DB_ENGINE: django.db.backends.postgresql
+      INVENTREE_DB_NAME: inventree
+      INVENTREE_DB_USER: inventree
+      INVENTREE_DB_PASSWORD: inventree
+      INVENTREE_DB_HOST: inventree-db
+      INVENTREE_DB_PORT: 5432
+      INVENTREE_SECRET_KEY: changeme-secret-key-for-testing-only
+    volumes:
+      - inventree-data:/home/inventree/data
+
+volumes:
+  inventree-db-data:
+  inventree-data:

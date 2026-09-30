@@ -1,0 +1,211 @@
+# =============================================================================
+# CI/CD — UI Automation Tests
+# GitHub Actions Workflow
+# =============================================================================
+# Triggers:
+#   • Push to main / develop
+#   • Pull Request targeting main / develop
+#   • Manual dispatch (workflow_dispatch) with optional env override
+#
+# Jobs:
+#   ui-test  → install → lint → install browsers → run Playwright UI tests
+#            → quality gates → upload report + screenshots → PR comment
+# =============================================================================
+
+name: UI Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "automation/ui/**"
+      - ".github/workflows/ui-tests.yml"
+
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "automation/ui/**"
+      - ".github/workflows/ui-tests.yml"
+
+  # Allow manual trigger from the GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      inventree_base_url:
+        description: "InvenTree base URL (overrides secret)"
+        required: false
+        default: ""
+      headed:
+        description: "Run in headed mode (requires self-hosted runner with display)"
+        required: false
+        type: boolean
+        default: false
+      debug_enabled:
+        description: "Enable verbose Playwright debug output"
+        required: false
+        type: boolean
+        default: false
+
+# Cancel in-progress runs on the same branch to save runner minutes
+concurrency:
+  group: ui-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  WORKING_DIR: automation/ui
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job: ui-test
+  # ---------------------------------------------------------------------------
+  ui-test:
+    name: "Playwright UI Tests (Chromium)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      INVENTREE_BASE_URL:  ${{ inputs.inventree_base_url || secrets.INVENTREE_BASE_URL }}
+      INVENTREE_USERNAME:  ${{ secrets.INVENTREE_USERNAME }}
+      INVENTREE_PASSWORD:  ${{ secrets.INVENTREE_PASSWORD }}
+      INVENTREE_API_TOKEN: ${{ secrets.INVENTREE_API_TOKEN }}
+      CI: "true"
+      DEBUG: ${{ inputs.debug_enabled == true && 'pw:browser,pw:api' || '' }}
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: ⬇️  Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: 🟢  Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      # -----------------------------------------------------------------------
+      - name: 📦  Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      # -----------------------------------------------------------------------
+      - name: 🔍  TypeScript type-check (lint)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm run lint
+
+      # -----------------------------------------------------------------------
+      - name: 🌐  Install Playwright browsers + system deps
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npx playwright install --with-deps chromium
+        # Only Chromium is required — install just what's needed to keep CI fast
+
+      # -----------------------------------------------------------------------
+      - name: ✅  Validate environment variables
+        run: |
+          MISSING=()
+          [ -z "$INVENTREE_BASE_URL"  ] && MISSING+=("INVENTREE_BASE_URL")
+          [ -z "$INVENTREE_USERNAME"  ] && MISSING+=("INVENTREE_USERNAME")
+          [ -z "$INVENTREE_PASSWORD"  ] && MISSING+=("INVENTREE_PASSWORD")
+          [ -z "$INVENTREE_API_TOKEN" ] && MISSING+=("INVENTREE_API_TOKEN")
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ Missing required secrets / env vars:"
+            for v in "${MISSING[@]}"; do echo "   • $v"; done
+            echo "   Add them to GitHub Secrets (Settings → Secrets → Actions)."
+            exit 1
+          fi
+          echo "✅ All environment variables are set."
+          echo "   Base URL: $INVENTREE_BASE_URL"
+
+      # -----------------------------------------------------------------------
+      - name: 🎭  Run Playwright UI tests
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          HEADED_FLAG=""
+          if [ "${{ inputs.headed }}" == "true" ]; then
+            HEADED_FLAG="--headed"
+          fi
+          npx playwright test $HEADED_FLAG --reporter=list,html
+        continue-on-error: true   # Always collect report, gate enforces failure
+        id: run_tests
+
+      # -----------------------------------------------------------------------
+      - name: 📸  Upload screenshots (failure evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots-${{ github.run_number }}
+          path: ${{ env.WORKING_DIR }}/test-results/**/*.png
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # -----------------------------------------------------------------------
+      - name: 🎬  Upload traces (failure evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-traces-${{ github.run_number }}
+          path: ${{ env.WORKING_DIR }}/test-results/**/*.zip
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # -----------------------------------------------------------------------
+      - name: 📊  Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-playwright-report-${{ github.run_number }}
+          path: ${{ env.WORKING_DIR }}/playwright-report/
+          retention-days: 30
+
+      # -----------------------------------------------------------------------
+      - name: 📊  Upload raw test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results-${{ github.run_number }}
+          path: ${{ env.WORKING_DIR }}/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # -----------------------------------------------------------------------
+      - name: 🚦  Enforce quality gates
+        working-directory: ${{ env.WORKING_DIR }}
+        # Replace with: npx ts-node ../../agents/scripts/check-quality-gates.ts ui
+        run: |
+          echo "=== Quality Gate Check ==="
+          if [ "${{ steps.run_tests.outcome }}" == "failure" ]; then
+            echo "❌ Quality Gate FAILED — Playwright reported UI test failures."
+            echo "   • Screenshots uploaded as: ui-screenshots-${{ github.run_number }}"
+            echo "   • Traces uploaded as:      ui-traces-${{ github.run_number }}"
+            echo "   • HTML report uploaded as: ui-playwright-report-${{ github.run_number }}"
+            exit 1
+          fi
+          echo "✅ Quality Gate PASSED — All UI tests passed."
+
+      # -----------------------------------------------------------------------
+      - name: 💬  Comment PR with test summary
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const outcome  = '${{ steps.run_tests.outcome }}';
+            const icon     = outcome === 'success' ? '✅' : '❌';
+            const status   = outcome === 'success' ? 'PASSED' : 'FAILED';
+            const runUrl   = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const screenshotNote = outcome === 'failure'
+              ? '\n\n📸 **Failure evidence** (screenshots + traces) uploaded as workflow artifacts.'
+              : '';
+            await github.rest.issues.createComment({
+              owner:    context.repo.owner,
+              repo:     context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ${icon} UI Tests — ${status}\n\n` +
+                    `| | |\n|---|---|\n` +
+                    `| **Workflow run** | [#${{ github.run_number }}](${runUrl}) |\n` +
+                    `| **Browser** | Chromium |\n` +
+                    `| **Triggered by** | \`${{ github.event_name }}\` |\n` +
+                    `| **Branch** | \`${{ github.head_ref }}\` |\n` +
+                    screenshotNote
+            });

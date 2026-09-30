@@ -1,0 +1,89 @@
+# =============================================================================
+# Quality Gates — API Automation
+# =============================================================================
+# This file defines the pass/fail thresholds that must be met before a
+# pipeline promotion (e.g. merge, deployment) is allowed to proceed.
+#
+# Evaluated by the orchestrator (agents/orchestrator.ts) after Agent 05
+# (QA Lead Reviewer) produces the final test report.
+#
+# Format is read by: scripts/check-quality-gates.ts (orchestrator helper)
+# =============================================================================
+
+gates:
+
+  # ---------------------------------------------------------------------------
+  # 1. Test Pass Rate — minimum percentage of tests that must pass
+  # ---------------------------------------------------------------------------
+  pass_rate:
+    overall:    100   # All tests must pass (0 failures tolerated in CI)
+    by_priority:
+      P0:       100   # Smoke/critical — ZERO failures allowed
+      P1:        95   # Core features  — up to 1 flake tolerated on rerun
+      P2:        80   # Edge cases     — minor failures acceptable
+
+  # ---------------------------------------------------------------------------
+  # 2. Failure Budget — maximum absolute number of failed tests allowed
+  # ---------------------------------------------------------------------------
+  max_failures:
+    P0:  0   # Any P0 failure blocks the pipeline immediately
+    P1:  1   # 1 P1 failure triggers a warning; 2+ blocks
+    P2:  3   # Up to 3 P2 failures allowed before blocking
+
+  # ---------------------------------------------------------------------------
+  # 3. Required Coverage — functional areas that MUST have at least one
+  #    passing test before promotion
+  # ---------------------------------------------------------------------------
+  required_coverage:
+    functional_areas:
+      - FA-001   # Part Category — Create
+      - FA-002   # Part Category — Read
+      - FA-003   # Part Category — Update
+      - FA-004   # Part Category — Delete
+      - FA-005   # Part — Create
+      - FA-006   # Part — Read / List / Filter
+      - FA-007   # Part — Update (PUT)
+      - FA-008   # Part — Update (PATCH)
+      - FA-009   # Part — Delete
+
+    # Tag-level coverage: at least one test with each tag must pass
+    required_tags:
+      - smoke
+      - auth
+      - regression
+
+  # ---------------------------------------------------------------------------
+  # 4. Performance Thresholds — per-request latency limits (milliseconds)
+  #    Tests annotated with @performance will assert against these values.
+  # ---------------------------------------------------------------------------
+  performance:
+    api_response_p95_ms:  2000   # 95th-percentile response time
+    api_response_max_ms:  5000   # Hard ceiling — test fails if exceeded
+
+  # ---------------------------------------------------------------------------
+  # 5. Retry Policy — controls automatic retries before marking a test failed
+  # ---------------------------------------------------------------------------
+  retries:
+    on_ci:   1   # Retry once on CI to absorb transient network flakes
+    on_local: 0  # No retries locally — fail fast for developer feedback
+
+  # ---------------------------------------------------------------------------
+  # 6. Report Artifacts — outputs that must be present for gate evaluation
+  # ---------------------------------------------------------------------------
+  required_artifacts:
+    - playwright-report/index.html
+    - agent-artifacts/logs/03-api-automation-output.json
+
+  # ---------------------------------------------------------------------------
+  # 7. Gate Enforcement Mode
+  #    "block"  — pipeline fails immediately if any gate is violated
+  #    "warn"   — violations are logged but pipeline continues
+  # ---------------------------------------------------------------------------
+  enforcement:
+    P0_failures:     block
+    P1_failures:     block
+    P2_failures:     warn
+    pass_rate:       block
+    coverage:        block
+    performance:     warn
+    artifacts:       block

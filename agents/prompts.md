@@ -1,0 +1,159 @@
+# Agent Invocation Prompts
+
+> These are the **user-turn prompts** sent to each agent at runtime.  
+> They pair with the system instructions in `system-instructions.md`.
+
+---
+
+## Prompt 1 — Requirements Analyst Agent
+
+**When to use:** At the start of the pipeline, before any test cases are written.
+
+```
+ 
+Analyse the InvenTree inventory management application and produce a structured
+requirements brief for the Part CRUD workflows.
+Source: https://docs.inventree.org/en/stable/part/
+
+Focus on these functional areas:
+1. Part Category — Create, Read (list + detail), Update, Delete
+2. Part — Create, Read (list + detail), Update (PUT + PATCH), Delete
+3. Part Search & Filtering — filter by category, active status, name keyword
+4. Authentication — Token-based auth required for all write operations
+
+Key InvenTree API endpoints to cover:
+  GET    /api/part/                      List all parts
+  POST   /api/part/                      Create a part
+  GET    /api/part/{id}/                 Get part detail
+  PUT    /api/part/{id}/                 Full update
+  PATCH  /api/part/{id}/                 Partial update
+  DELETE /api/part/{id}/                 Delete a part
+  GET    /api/part/category/             List all categories
+  POST   /api/part/category/             Create a category
+  GET    /api/part/category/{id}/        Get category detail
+  PUT    /api/part/category/{id}/        Update category
+  DELETE /api/part/category/{id}/        Delete category
+
+For the UI, the relevant pages are:
+  - /part/           Parts list page
+  - /part/{id}/      Part detail page
+  - Create/Edit Part form (modal or dedicated page)
+  - Part Category tree view
+
+Produce the output JSON now.
+```
+
+---
+
+## Prompt 2 — Test Design Agent
+
+**When to use:** After Agent 1 has produced the requirements brief JSON.
+
+```
+Below is the requirements brief produced by the Requirements Analyst agent.
+Generate a comprehensive manual test case catalogue for all functional areas described.
+
+Requirements Brief:
+<<INJECT: output from Agent 1>>
+
+Requirements:
+- Generate at least 8 API test cases per CRUD operation (happy path, boundaries, negative)
+- Generate at least 6 UI test cases per CRUD operation (happy path, boundaries, negative)
+- Include authentication failure tests for every write endpoint
+- Cover Part Category as a dependency for Part creation tests
+- Include test data in each test case (sample JSON payloads for API, sample form values for UI)
+- Tag tests appropriately: smoke, regression, negative, auth, boundary
+
+Produce the full test case catalogue JSON now.
+```
+
+---
+
+## Prompt 3 — API Automation Agent
+
+**When to use:** After Agent 2 has produced the test case catalogue JSON.
+
+**Step 3a — Brief agent with test catalogue:**
+```
+Below is the test case catalogue produced by the Test Design agent.
+Generate complete Playwright + TypeScript API automation scripts for all
+API test cases (type: "API") in the catalogue.
+
+Use `inventree` Docker Container if required 
+
+Test Case Catalogue:
+<<INJECT: output from Agent 2>>
+
+Additional technical requirements:
+- Base URL from: process.env.INVENTREE_BASE_URL  (e.g. http://localhost:8000)
+- Auth token from: process.env.INVENTREE_API_TOKEN
+- Test timeout: 30 000 ms per test
+- Include a playwright.config.ts with projects: ['api-tests']
+- Include a package.json with all dependencies listed
+- Include .env.example with all required env vars
+- Generate a helpers/api-client.ts shared client class
+- File naming: <operation>.api.spec.ts (e.g. part-create.api.spec.ts)
+
+Generate all file contents now as the specified JSON structure.
+```
+
+---
+
+## Prompt 4 — UI Automation Agent
+
+**When to use:** After Agent 2 has produced the test case catalogue JSON.
+
+**Step 4a — Brief agent with test catalogue:**
+```
+Below is the test case catalogue produced by the Test Design agent.
+Generate complete Playwright + TypeScript UI automation scripts using the
+Page Object Model for all UI test cases (type: "UI") in the catalogue.
+
+Use `inventree` Docker Container if required 
+
+Test Case Catalogue:
+<<INJECT: output from Agent 2>>
+
+Additional technical requirements:
+- Base URL from: process.env.INVENTREE_BASE_URL  (e.g. http://localhost:8000)
+- Username from: process.env.INVENTREE_USERNAME
+- Password from: process.env.INVENTREE_PASSWORD
+- Browser: chromium (default), cross-browser optional
+- Viewport: 1280 x 720
+- Screenshot on failure: enabled
+- Include a playwright.config.ts with projects: ['ui-tests']
+- Include a package.json with all dependencies listed
+- Include .env.example with all required env vars
+- Page Objects in pages/ directory
+- Shared fixtures in helpers/fixtures.ts
+- File naming: <operation>.ui.spec.ts (e.g. part-create.ui.spec.ts)
+
+Generate all file contents now as the specified JSON structure.
+```
+
+---
+
+## Prompt 5 — Self-review / Quality Gate
+
+**When to use:** After all automation scripts have been generated.
+
+```
+You are a QA Lead reviewing automation scripts generated by AI agents.
+Review the following files and produce a quality assessment report.
+
+Files to review:
+<<INJECT: list of generated file paths>>
+
+Checklist:
+- [ ] All P0 test cases are covered in automation
+- [ ] No hardcoded credentials or base URLs
+- [ ] Proper cleanup (afterEach/afterAll) prevents test pollution
+- [ ] Page Object Model correctly separates concerns
+- [ ] API tests assert both status code AND response body
+- [ ] Tests are independent and can run in any order
+- [ ] Error scenarios are tested (4xx responses)
+- [ ] TypeScript types are explicit (no `any` unless justified)
+
+For each checklist item, report: PASS / FAIL / PARTIAL with specific file references.
+Produce a JSON quality report.
+```
